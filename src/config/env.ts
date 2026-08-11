@@ -22,9 +22,7 @@ const envSchema = z.object({
             32,
             "JWT_SECRET must contain at least 32 characters"
         ),
-    TEST_DATABASE_URL: z
-        .string()
-        .min(1, "TEST_DATABASE_URL is required"),
+    TEST_DATABASE_URL: z.string().url().optional(),
 
     JWT_EXPIRES_IN: z
         .string()
