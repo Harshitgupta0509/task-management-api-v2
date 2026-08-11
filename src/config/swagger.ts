@@ -10,6 +10,10 @@ export const swaggerDocument = {
 
     servers: [
         {
+            url: "https://task-management-api-v2.onrender.com",
+            description: "Production server",
+        },
+        {
             url: "http://localhost:3000",
             description: "Local development server",
         },

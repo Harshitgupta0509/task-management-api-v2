@@ -1,7 +1,7 @@
 {
   "name": "task-management-api-v2",
   "version": "1.0.0",
-  "description": "",
+  "description": "Production-oriented TypeScript REST API with JWT authentication, user-scoped task management, Prisma, PostgreSQL, testing, and Docker.",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
