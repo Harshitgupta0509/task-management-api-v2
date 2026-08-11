@@ -122,77 +122,117 @@ flowchart TD
 
 ## Authentication Flow
 
+Authentication is easier to follow as three focused paths: registration, login, and access to a protected task route.
+
+### Registration
+
 ```mermaid
-sequenceDiagram
-    autonumber
-    participant C as Client
-    participant E as Express auth route
-    participant A as Auth controller/service
-    participant P as Prisma Client
-    participant DB as PostgreSQL
-    participant B as bcrypt
-    participant J as JWT library
-    participant T as Protected task route
+flowchart TD
+    REG_REQUEST["POST /auth/register<br/>name · email · password"]
+    REG_VALIDATE["Zod validates request body"]
+    REG_VALID{"Payload valid?"}
+    REG_LOOKUP["Prisma findUnique by email"]
+    REG_EXISTS{"Email already registered?"}
+    REG_HASH["bcrypt.hash<br/>10 salt rounds"]
+    REG_CREATE["Prisma creates User<br/>with password hash"]
+    REG_SAFE["Select safe fields only<br/>id · name · email · createdAt"]
+    REG_201["201 Created<br/>user returned"]
+    REG_400["400 Validation failed"]
+    REG_409["409 User already exists"]
 
-    rect rgb(244, 248, 255)
-        Note over C,DB: Registration
-        C->>E: POST /auth/register (name, email, password)
-        E->>E: Validate body with Zod
-        E->>A: registerUser(validated body)
-        A->>P: findUnique(email)
-        P->>DB: Query user by unique email
-        DB-->>P: Existing user or null
-        P-->>A: Result
-        alt Email already exists
-            A-->>E: Throw AppError (409)
-            E-->>C: 409 User already exists
-        else New email
-            A->>B: hash(password, 10)
-            B-->>A: Password hash
-            A->>P: create user and select safe fields
-            P->>DB: INSERT user
-            DB-->>P: Created user
-            P-->>A: id, name, email, createdAt
-            A-->>E: User result
-            E-->>C: 201 Created
-        end
-    end
+    REG_REQUEST --> REG_VALIDATE --> REG_VALID
+    REG_VALID -->|No| REG_400
+    REG_VALID -->|Yes| REG_LOOKUP --> REG_EXISTS
+    REG_EXISTS -->|Yes| REG_409
+    REG_EXISTS -->|No| REG_HASH --> REG_CREATE --> REG_SAFE --> REG_201
 
-    rect rgb(247, 252, 246)
-        Note over C,J: Login
-        C->>E: POST /auth/login (email, password)
-        E->>E: Validate body with Zod
-        E->>A: loginUser(validated body)
-        A->>P: findUnique(email)
-        P->>DB: Query user
-        DB-->>P: User or null
-        P-->>A: Result
-        A->>B: compare(password, stored hash)
-        B-->>A: Match result
-        alt User missing or password invalid
-            A-->>E: Throw AppError (401)
-            E-->>C: 401 Invalid email or password
-        else Credentials valid
-            A->>J: sign({ userId }, secret, expiration)
-            J-->>A: JWT
-            A-->>E: Token and safe user fields
-            E-->>C: 200 Login successful
-        end
-    end
+    classDef request fill:#0f172a,stroke:#38bdf8,color:#f8fafc,stroke-width:2px
+    classDef process fill:#172554,stroke:#60a5fa,color:#f8fafc,stroke-width:2px
+    classDef decision fill:#3b0764,stroke:#d8b4fe,color:#ffffff,stroke-width:2px
+    classDef crypto fill:#4c1d95,stroke:#c084fc,color:#ffffff,stroke-width:2px
+    classDef success fill:#064e3b,stroke:#34d399,color:#ffffff,stroke-width:2px
+    classDef error fill:#7f1d1d,stroke:#f87171,color:#ffffff,stroke-width:2px
 
-    rect rgb(255, 249, 240)
-        Note over C,T: Protected request
-        C->>E: /tasks request + Authorization: Bearer JWT
-        E->>J: verify(token, JWT_SECRET)
-        alt Token missing, malformed, invalid, or expired
-            E-->>C: 401 response
-        else Token valid
-            J-->>E: Decoded userId
-            E->>E: Set req.user.id
-            E->>T: Continue to validation and task handler
-            T-->>C: User-scoped response
-        end
-    end
+    class REG_REQUEST request
+    class REG_VALIDATE,REG_LOOKUP,REG_CREATE,REG_SAFE process
+    class REG_VALID,REG_EXISTS decision
+    class REG_HASH crypto
+    class REG_201 success
+    class REG_400,REG_409 error
+```
+
+### Login
+
+```mermaid
+flowchart TD
+    LOGIN_REQUEST["POST /auth/login<br/>email · password"]
+    LOGIN_VALIDATE["Zod validates request body"]
+    LOGIN_VALID{"Payload valid?"}
+    LOGIN_LOOKUP["Prisma findUnique by email"]
+    LOGIN_FOUND{"User found?"}
+    LOGIN_COMPARE["bcrypt.compare<br/>submitted password vs stored hash"]
+    LOGIN_MATCH{"Password matches?"}
+    LOGIN_SIGN["JWT signs userId<br/>using configured secret and expiry"]
+    LOGIN_200["200 Login successful<br/>JWT + safe user fields"]
+    LOGIN_400["400 Validation failed"]
+    LOGIN_401["401 Invalid email or password"]
+
+    LOGIN_REQUEST --> LOGIN_VALIDATE --> LOGIN_VALID
+    LOGIN_VALID -->|No| LOGIN_400
+    LOGIN_VALID -->|Yes| LOGIN_LOOKUP --> LOGIN_FOUND
+    LOGIN_FOUND -->|No| LOGIN_401
+    LOGIN_FOUND -->|Yes| LOGIN_COMPARE --> LOGIN_MATCH
+    LOGIN_MATCH -->|No| LOGIN_401
+    LOGIN_MATCH -->|Yes| LOGIN_SIGN --> LOGIN_200
+
+    classDef request fill:#0f172a,stroke:#38bdf8,color:#f8fafc,stroke-width:2px
+    classDef process fill:#172554,stroke:#60a5fa,color:#f8fafc,stroke-width:2px
+    classDef decision fill:#3b0764,stroke:#d8b4fe,color:#ffffff,stroke-width:2px
+    classDef crypto fill:#4c1d95,stroke:#c084fc,color:#ffffff,stroke-width:2px
+    classDef success fill:#064e3b,stroke:#34d399,color:#ffffff,stroke-width:2px
+    classDef error fill:#7f1d1d,stroke:#f87171,color:#ffffff,stroke-width:2px
+
+    class LOGIN_REQUEST request
+    class LOGIN_VALIDATE,LOGIN_LOOKUP process
+    class LOGIN_VALID,LOGIN_FOUND,LOGIN_MATCH decision
+    class LOGIN_COMPARE,LOGIN_SIGN crypto
+    class LOGIN_200 success
+    class LOGIN_400,LOGIN_401 error
+```
+
+### Protected task request
+
+```mermaid
+flowchart TD
+    TASK_REQUEST["Request to /tasks<br/>Authorization: Bearer &lt;JWT&gt;"]
+    HEADER_CHECK{"Bearer header present<br/>and correctly formatted?"}
+    VERIFY["jwt.verify<br/>token + JWT_SECRET"]
+    TOKEN_VALID{"Signature and expiry valid?"}
+    USER_CONTEXT["Populate req.user.id<br/>from decoded userId"]
+    TASK_VALIDATE["Validate task body,<br/>params, or query with Zod"]
+    TASK_HANDLER["Controller → service → Prisma<br/>using authenticated userId"]
+    TASK_RESPONSE["User-scoped task response"]
+    AUTH_401["401 Authentication required<br/>or invalid/expired token"]
+
+    TASK_REQUEST --> HEADER_CHECK
+    HEADER_CHECK -->|No| AUTH_401
+    HEADER_CHECK -->|Yes| VERIFY --> TOKEN_VALID
+    TOKEN_VALID -->|No| AUTH_401
+    TOKEN_VALID -->|Yes| USER_CONTEXT --> TASK_VALIDATE --> TASK_HANDLER --> TASK_RESPONSE
+
+    classDef request fill:#0f172a,stroke:#38bdf8,color:#f8fafc,stroke-width:2px
+    classDef process fill:#172554,stroke:#60a5fa,color:#f8fafc,stroke-width:2px
+    classDef decision fill:#3b0764,stroke:#d8b4fe,color:#ffffff,stroke-width:2px
+    classDef crypto fill:#4c1d95,stroke:#c084fc,color:#ffffff,stroke-width:2px
+    classDef success fill:#064e3b,stroke:#34d399,color:#ffffff,stroke-width:2px
+    classDef error fill:#7f1d1d,stroke:#f87171,color:#ffffff,stroke-width:2px
+
+    class TASK_REQUEST request
+    class USER_CONTEXT,TASK_VALIDATE,TASK_HANDLER process
+    class HEADER_CHECK,TOKEN_VALID decision
+    class VERIFY crypto
+    class TASK_RESPONSE success
+    class AUTH_401 error
 ```
 
 No pre-created account is required. Register a user first, then log in to obtain a JWT.
